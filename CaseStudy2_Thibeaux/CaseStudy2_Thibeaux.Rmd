@@ -8,6 +8,8 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+
+#Libraries
 library(tidyverse)
 library(ggplot2)
 library(GGally)
@@ -19,9 +21,11 @@ library(rpart)
 # Libraries for KNN
 library(class)
 library(e1071)
+# Library for prediction output
+library(modelr)
 
 # Load the Data
-fritos = read.csv('https://github.com/BivinSadler/MSDS_6306_Doing-Data-Science/raw/Master/Unit%2014%20and%2015%20Case%20Study%202/CaseStudy2-data.csv', header = TRUE, fill = TRUE)
+fritos = read.csv('https://github.com/athibeaux/DS6306/raw/main/CaseStudy2_Thibeaux/CaseStudy2-data.csv', header = TRUE, fill = TRUE)
 ```
 
 ```{r data cleaning}
@@ -109,6 +113,7 @@ ROSE.holdout <- ROSE.eval(Attrition ~ ., data = train, learner = rpart, method.a
 ROSE.holdout
 ```
 Since there is not a big improvement between the AOC in the baseline vs. balancing methods, and the highest AOC is not consistent across seeds, we'll go with the combination of oversampling and undersampling. I did try the ROSE method but the synthetic data it created was not ideal - such as the new minimum age was 4. Since hopefully FritoLay does not employ 4 year olds, let'd just stick with the data we know.
+
 ```{r Balance data for entire df}
 # Both (Oversample Minority class with replacement, Undersample majority class without replacement)
 total = dim(fritos)[1]*1
@@ -192,9 +197,9 @@ eda.pvalues = eda.cont %>% select(Attrition,Age,DistanceFromHome,EnvironmentSati
 
 summary(eda.pvalues)
 ```
-# Alex don't forget to uncomment this ggpairs
-```{r Scatterplot Matrix}
-# ggpairs(eda.pvalues) 
+Let's examine the matrix of scatterplots:
+```{r Scatterplot Matrix, eval=FALSE, include=FALSE}
+ggpairs(eda.pvalues) 
 ```
 After balancing the data, and eliminating variables in which there was not sufficient evidence that Attrition rates were different, we can see there is a lot of independence in our dataset. The strongest linear relationship is monthly income and job level, so we will keep that in mind when we are predicting salary levels. 
 
@@ -284,150 +289,118 @@ model = naiveBayes(train[,c(2,15)],train$Attrition)
   CM = confusionMatrix(table(predict(model,test[,c(2,15)]),test$Attrition))
   CM
 ```
+Our Naive Bayes model had lower sensitivity. 
+
 Now let's examine the interaction between Age and Job Involvement. Age has a strong correlation with Total Working Years (for obvious reasons), so let's compare Total Working Years as a predictor of Age, with and without the Job Involvement interaction:
 
-```{r Age and Total Working Years Regression}
-# Colinearity of Age and Total Working Years
+```{r Age and Total Working Years Regression by model}
+# Model 1.lm, Co linearity of Age and Total Working Years
 fit = lm(Age ~ TotalWorkingYears, data = data_balanced_both)
 summary(fit)
 confint(fit)
 plot(fit)
 
-# Scatterplot
+# Scatter plot
 data_balanced_both %>% ggplot(aes(Age, TotalWorkingYears, color = Attrition)) + 
   geom_jitter() +
   ylab("Age") + xlab("Total Working Years") +
   ggtitle("Age vs. Total Working Years")
 
-# Controlling for Job Involvement
+# Model 2.lm, Controlling for Job Involvement
 fit = lm(Age ~ TotalWorkingYears + JobInvolvement, data = data_balanced_both)
 summary(fit)
 confint(fit)
-plot(fit)
 
-# Controlling for the Interaction of Total Working Years and Job Involvement
+# Model 3.lm, Controlling for the Interaction of Total Working Years and Job Involvement
 fit = lm(Age ~ TotalWorkingYears*JobInvolvement, data = data_balanced_both)
 summary(fit)
 confint(fit)
-plot(fit)
 
+# Model 4.lm, Controlling for Job Involvement and Attrition
+fit = lm(Age ~ TotalWorkingYears + JobInvolvement + factor(Attrition), data = data_balanced_both)
+summary(fit)
+confint(fit)
+
+# Model 5.lm, Controlling for Interaction of Job Involvement and Attrition
+fit = lm(Age ~ TotalWorkingYears + JobInvolvement*factor(Attrition), data = data_balanced_both)
+summary(fit)
+confint(fit)
+
+# Model 6.lm, Controlling for Job Involvement, Stock Option Level, and Attrition
+fit = lm(Age ~ TotalWorkingYears + JobInvolvement + StockOptionLevel + factor(Attrition), data = data_balanced_both)
+summary(fit)
+confint(fit)
+
+# Model 7.lm, Controlling for Job Involvement, and the interaction between Stock Option Level and Attrition
+fit = lm(Age ~ TotalWorkingYears + JobInvolvement + StockOptionLevel*factor(Attrition), data = data_balanced_both)
+summary(fit)
+confint(fit)
 ```
 Time to test our classification models on our correlated variables
-```{r KNN prediction model B}
+```{r KNN prediction by model}
 
 # Split our data into a train and test set
+# k = 3 for all models
+set.seed(8)
 splitPerc = .8
 trainIndices = sample(1:dim(data_balanced_both)[1],round(splitPerc * dim(data_balanced_both)[1]))
 dftrain = data_balanced_both[trainIndices,]
 dftest = data_balanced_both[-trainIndices,]
 
-# k = 3 for raw data
+# Model 1.knn, Age and Total Working Years
 classifications = knn(dftrain[,c(2,30)],dftest[,c(2,30)],dftrain$Attrition, 
                       prob = TRUE, k = 3)
 table(classifications,dftest$Attrition)
 confusionMatrix(table(classifications,dftest$Attrition))
 
-#Internal CV
+# Model 1.cv,Internal CV
 classifications = knn.cv(data_balanced_both[,c(2,30)],data_balanced_both$Attrition,prob = TRUE, k = 3)
 confusionMatrix(table(classifications,data_balanced_both$Attrition))
 
-# Naive Bayes
+# Model 1.nb, Naive Bayes
 model = naiveBayes(train[,c(2,30)],train$Attrition)
   table(predict(model,test[,c(2,30)]),test$Attrition)
   CM = confusionMatrix(table(predict(model,test[,c(2,30)]),test$Attrition))
   CM
-```
-
-Can we combine them?
-```{r KNN prediction model A&B}
-
-# Split our data into a train and test set
-splitPerc = .8
-trainIndices = sample(1:dim(data_balanced_both)[1],round(splitPerc * dim(data_balanced_both)[1]))
-dftrain = data_balanced_both[trainIndices,]
-dftest = data_balanced_both[-trainIndices,]
-
-# k = 3 for raw data
-# Columns = Age, Job Involvement, Total Working Years
+  
+# Model 2.knn, Columns = Age, Job Involvement, Total Working Years
 classifications = knn(dftrain[,c(2,15,30)],dftest[,c(2,15,30)],dftrain$Attrition, 
                       prob = TRUE, k = 3)
 table(classifications,dftest$Attrition)
 confusionMatrix(table(classifications,dftest$Attrition))
 
-#Internal CV
+# Model 2.cv, Internal CV
 classifications = knn.cv(data_balanced_both[,c(2,15,30)],data_balanced_both$Attrition,prob = TRUE, k = 3)
 confusionMatrix(table(classifications,data_balanced_both$Attrition))
 
-# Naive Bayes
+# Model 2.nb, Naive Bayes
 model = naiveBayes(train[,c(2,15,30)],train$Attrition)
   table(predict(model,test[,c(2,15,30)]),test$Attrition)
   CM = confusionMatrix(table(predict(model,test[,c(2,15,30)]),test$Attrition))
   CM
-```
-Linear Regression of Model B:
-```{r Linear Regression of Model B}
-fit = lm(Age ~ TotalWorkingYears + JobInvolvement + factor(Attrition), data = data_balanced_both)
-summary(fit)
-confint(fit)
-plot(fit)
 
-# Interaction of Job Involvement and Attrition
-fit = lm(Age ~ TotalWorkingYears + JobInvolvement*factor(Attrition), data = data_balanced_both)
-summary(fit)
-confint(fit)
-plot(fit)
-```
-Now let's add the Stock Option Levels.
-```{r KNN prediction model A&B with Stock Options}
-
-# Split our data into a train and test set
-splitPerc = .8
-trainIndices = sample(1:dim(data_balanced_both)[1],round(splitPerc * dim(data_balanced_both)[1]))
-dftrain = data_balanced_both[trainIndices,]
-dftest = data_balanced_both[-trainIndices,]
-
-# k = 3 for raw data
-# Columns = Age, Job Involvement, Stock Option Level, Total Working Years
+# Model 3.knn, Columns = Age, Job Involvement, Stock Option Level, Total Working Years
 classifications = knn(dftrain[,c(2,15,29,30)],dftest[,c(2,15,29,30)],dftrain$Attrition, 
                       prob = TRUE, k = 3)
 table(classifications,dftest$Attrition)
 confusionMatrix(table(classifications,dftest$Attrition))
 
-#Internal CV
+# Model 3.cv, Internal CV
 classifications = knn.cv(data_balanced_both[,c(2,15,29,30)],data_balanced_both$Attrition,prob = TRUE, k = 3)
 confusionMatrix(table(classifications,data_balanced_both$Attrition))
 
-# Naive Bayes
+# Model 3.nb, Naive Bayes
 model = naiveBayes(train[,c(2,15,29,30)],train$Attrition)
   table(predict(model,test[,c(2,15,29,30)]),test$Attrition)
   CM = confusionMatrix(table(predict(model,test[,c(2,15,30)]),test$Attrition))
   CM
 ```
-Linear Regression of Model C
-```{r Linear Regression of Model C}
-fit = lm(Age ~ TotalWorkingYears + JobInvolvement + StockOptionLevel + factor(Attrition), data = data_balanced_both)
-summary(fit)
-confint(fit)
-plot(fit)
 
-# Interaction of Job Involvement and Attrition
-fit = lm(Age ~ TotalWorkingYears + JobInvolvement + StockOptionLevel*factor(Attrition), data = data_balanced_both)
-summary(fit)
-confint(fit)
-plot(fit)
-```
 Now let's switch gears to predict Monthly Incomes
 ```{r Regression Model for Monthly Incomes}
-# Colinearity of Monthly Income and Total Working Years - Raw data
+
+# Model 8.lm, Co linearity of Monthly Income and Total Working Years, Raw data
 fit = lm(MonthlyIncome ~ TotalWorkingYears, data = data_balanced_both)
-summary(fit)
-confint(fit)
-plot(fit)
-
-# Log-transform the monthly income data:
-data_balanced_both$log_Income = log(data_balanced_both$MonthlyIncome)
-
-fit = lm(log_Income ~ TotalWorkingYears, data = data_balanced_both)
 summary(fit)
 confint(fit)
 plot(fit)
@@ -439,6 +412,15 @@ data_balanced_both %>%
   ylab("Monthly Income") + xlab("Total Working Years") +
   ggtitle("Monthly Income vs. Total Working Years")
 
+# Log-transform the monthly income data:
+data_balanced_both$log_Income = log(data_balanced_both$MonthlyIncome)
+
+# Model 9.lm, Co linearity of Monthly Income and Total Working Years, log-transformed data
+fit = lm(log_Income ~ TotalWorkingYears, data = data_balanced_both)
+summary(fit)
+confint(fit)
+plot(fit)
+
 # Scatterplot, log-linear model
 data_balanced_both %>% 
   ggplot(aes(log_Income, TotalWorkingYears, color = Attrition)) + 
@@ -446,95 +428,86 @@ data_balanced_both %>%
   ylab("Monthly Income, log transformed") + xlab("Total Working Years") +
   ggtitle("Monthly Income vs. Total Working Years")
 
-# Controlling for Age
+# Model 10.lm, Controlling for Age
 fit = lm(log_Income ~ TotalWorkingYears + Age, data = data_balanced_both)
 summary(fit)
 confint(fit)
-plot(fit)
 
-# Controlling for the Interaction of Total Working Years and Age
+# Model 11.lm, Controlling for the Interaction of Total Working Years and Age
 fit = lm(log_Income ~ TotalWorkingYears*Age, data = data_balanced_both)
 summary(fit)
 confint(fit)
-plot(fit)
 
-# Controlling for the Interaction of Total Working Years and Age, Job Involvement
-fit = lm(log_Income ~ TotalWorkingYears*Age + JobInvolvement, data = data_balanced_both)
+# Model 12.lm, Controlling for the Interaction of Total Working Years and Age, and Attrition
+fit = lm(log_Income ~ TotalWorkingYears*Age + Attrition, data = data_balanced_both)
 summary(fit)
 confint(fit)
-plot(fit)
 
-# Controlling for the Interaction of Total Working Years and Age, and Interaction of Job Involvement and Attrition
-fit = lm(log_Income ~ TotalWorkingYears*Age + JobInvolvement*factor(Attrition), data = data_balanced_both)
+# Model 13.lm, Controlling for the Interaction of Total Working Years and Age, and Interaction of Job Involvement and Attrition
+fit = lm(log_Income ~ TotalWorkingYears*Age + 
+           JobInvolvement*factor(Attrition), data = data_balanced_both)
 summary(fit)
 confint(fit)
-plot(fit)
 
-# Controlling for the Interaction of Total Working Years and Age ,and Stock Option Level
-fit = lm(log_Income ~ TotalWorkingYears*Age + StockOptionLevel, data = data_balanced_both)
+# Model 14.lm, Controlling for the Interaction of Total Working Years and Age, and Stock Option Level
+fit = lm(log_Income ~ TotalWorkingYears*Age + 
+           StockOptionLevel, data = data_balanced_both)
 summary(fit)
 confint(fit)
-plot(fit)
 
-# Controlling for the Interaction of Total Working Years and Attrition
-fit = lm(log_Income ~ TotalWorkingYears*Age + factor(Attrition), data = data_balanced_both)
+# Model 15.lm, Controlling for the Interaction of Total Working Years and Age, and Attrition
+fit = lm(log_Income ~ TotalWorkingYears*Age + 
+           factor(Attrition), data = data_balanced_both)
 summary(fit)
 confint(fit)
-plot(fit)
 
-# Controlling for the Interaction of Total Working Years and Attrition
-fit = lm(log_Income ~ TotalWorkingYears*Age + factor(Attrition) + JobInvolvement*factor(Attrition), data = data_balanced_both)
+# Model 16.lm, Controlling for the Interaction of Total Working Years and Age, Attrition, and interaction of Job Involvement and Attrition
+fit = lm(log_Income ~ TotalWorkingYears*Age + factor(Attrition) + 
+           JobInvolvement*factor(Attrition), data = data_balanced_both)
 summary(fit)
 confint(fit)
-plot(fit)
 
-# Controlling for the Interaction of Total Working Years and Attrition
-fit = lm(log_Income ~ TotalWorkingYears*Age + factor(Attrition) + Gender, data = data_balanced_both)
+# Model 17.lm, Controlling for the Interaction of Total Working Years, Attrition, and Gender
+fit = lm(log_Income ~ TotalWorkingYears*Age + factor(Attrition) + 
+           Gender, data = data_balanced_both)
 summary(fit)
 confint(fit)
-plot(fit)
+
+# Model 18.lm, Controlling for the Interaction of Total Working Years and Age, Attrition, Job Involvement, and Stock Option Level
+fit = lm(log_Income ~ TotalWorkingYears*Age + Attrition + 
+           JobInvolvement + StockOptionLevel, data = data_balanced_both)
+summary(fit)
+confint(fit)
 ```
 
-```{r KNN prediction model for Age, Job Involvement, Stock Option Level, Total Working Years, Monthly Income}
-
-# Split our data into a train and test set
+```{r KNN prediction model pick up at Model 16}
+set.seed(8)
 splitPerc = .8
 trainIndices = sample(1:dim(data_balanced_both)[1],round(splitPerc * dim(data_balanced_both)[1]))
 dftrain = data_balanced_both[trainIndices,]
 dftest = data_balanced_both[-trainIndices,]
 
-# k = 3 for raw data
-# Columns = Age, Job Involvement, Stock Option Level, Total Working Years, Monthly Income
-classifications = knn(dftrain[,c(2,15,29,30,38)],dftest[,c(2,15,29,30,38)],dftrain$Attrition, 
-                      prob = TRUE, k = 3)
+# Model 16.knn, Columns = Age, Job Involvement, Total Working Years, Monthly Income
+classifications = knn(dftrain[,c(2,15,30,38)],dftest[,c(2,15,30,38)],
+                      dftrain$Attrition, prob = TRUE, k = 3)
 table(classifications,dftest$Attrition)
 confusionMatrix(table(classifications,dftest$Attrition))
 
-#Internal CV
-classifications = knn.cv(data_balanced_both[,c(2,15,29,30,38)],data_balanced_both$Attrition,prob = TRUE, k = 3)
-confusionMatrix(table(classifications,data_balanced_both$Attrition))
-```
-What if we took Stock Option out of the model?
-```{r KNN prediction model for Age, Job Involvement, Total Working Years, Monthly Income}
-
-# Split our data into a train and test set
-splitPerc = .8
-trainIndices = sample(1:dim(data_balanced_both)[1],round(splitPerc * dim(data_balanced_both)[1]))
-dftrain = data_balanced_both[trainIndices,]
-dftest = data_balanced_both[-trainIndices,]
-
-# k = 3 for raw data
-# Columns = Age, Job Involvement, Total Working Years, Monthly Income
-classifications = knn(dftrain[,c(2,15,30,38)],dftest[,c(2,15,30,38)],dftrain$Attrition, 
-                      prob = TRUE, k = 3)
-table(classifications,dftest$Attrition)
-confusionMatrix(table(classifications,dftest$Attrition))
-
-#Internal CV
+# Model 16.cv, Internal CV
 classifications = knn.cv(data_balanced_both[,c(2,15,30,38)],data_balanced_both$Attrition,prob = TRUE, k = 3)
 confusionMatrix(table(classifications,data_balanced_both$Attrition))
 ```
-Never mind! Since we are relatively confident about our models, let's predict the missing values. 
+```{r}
+# Model 18.knn, Columns = Age, Job Involvement, Stock Option Level, Total Working Years, Monthly Income
+classifications = knn(dftrain[,c(2,15,29,30,38)],dftest[,c(2,15,29,30,38)],
+                      dftrain$Attrition, prob = TRUE, k = 3)
+table(classifications,dftest$Attrition)
+confusionMatrix(table(classifications,dftest$Attrition))
+
+# Model 18.cv, Internal CV
+classifications = knn.cv(data_balanced_both[,c(2,15,29,30,38)],data_balanced_both$Attrition,prob = TRUE, k = 3)
+confusionMatrix(table(classifications,data_balanced_both$Attrition))
+```
 
 ```{r Predictions}
 set.seed(12)
@@ -542,79 +515,98 @@ TrainObs = sample(seq(1,dim(data_balanced_both)[1]),round(.75*dim(data_balanced_
 incomeTrain = data_balanced_both[TrainObs,]
 incomeTest = data_balanced_both[-TrainObs,]
 
-# Model 1 Fit
-Model1_fit = lm(MonthlyIncome ~ TotalWorkingYears*Age, data = incomeTrain)
-summary(Model1_fit)
-Model1_Preds = predict(Model1_fit, newdata = incomeTest)
-as.data.frame(Model1_Preds)
+# Model 11 Fit
+Model11_fit = lm(MonthlyIncome ~ TotalWorkingYears*Age, data = incomeTrain)
+summary(Model11_fit)
+Model11_Preds = predict(Model11_fit, newdata = incomeTest)
+as.data.frame(Model11_Preds)
 
-MSPE = data.frame(Observed = incomeTest$MonthlyIncome, Predicted = Model1_Preds)
-MSPE$Residual = MSPE$Observed - MSPE$Predicted
-MSPE$SquaredResidual = MSPE$Residual^2
-mean(MSPE$SquaredResidual)
-
-# Model 2 Fit
-Model2_fit = lm(MonthlyIncome ~ TotalWorkingYears + TotalWorkingYears*Age, data = incomeTrain)
-summary(Model2_fit)
-Model2_Preds = predict(Model2_fit, newdata = incomeTest)
-as.data.frame(Model2_Preds)
-
-MSPE = data.frame(Observed = incomeTest$MonthlyIncome, Predicted = Model2_Preds)
-MSPE$Residual = MSPE$Observed - MSPE$Predicted
-MSPE$SquaredResidual = MSPE$Residual^2
-mean(MSPE$SquaredResidual)
-
-# Model 3 Fit
-Model3_fit = lm(log_Income ~ TotalWorkingYears + Attrition + TotalWorkingYears*Age, data = incomeTrain)
-summary(Model3_fit)
-Model3_Preds = predict(Model3_fit, newdata = incomeTest)
-as.data.frame(Model3_Preds)
-
-MSPE = data.frame(Observed = incomeTest$log_Income, Predicted = Model3_Preds)
-MSPE$Residual = MSPE$Observed - MSPE$Predicted
-MSPE$SquaredResidual = MSPE$Residual^2
-mean(MSPE$SquaredResidual)
-
-
-# Model 4 Fit
-Model4_fit = lm(MonthlyIncome ~ TotalWorkingYears * Age + StockOptionLevel, data = incomeTrain)
-summary(Model4_fit)
-Model4_Preds = predict(Model4_fit, newdata = incomeTest)
-as.data.frame(Model4_Preds)
-
-MSPE = data.frame(Observed = incomeTest$MonthlyIncome, Predicted = Model4_Preds)
+MSPE = data.frame(Observed = incomeTest$MonthlyIncome, Predicted = Model11_Preds)
 MSPE$Residual = MSPE$Observed - MSPE$Predicted
 MSPE$SquaredResidual = MSPE$Residual^2
 sqrt(mean(MSPE$SquaredResidual))
 
-# Model 5 Fit
-Model5_fit = lm(MonthlyIncome ~ JobLevel + Age + TotalWorkingYears, data = incomeTrain)
-summary(Model5_fit)
-Model5_Preds = predict(Model5_fit, newdata = incomeTest)
-as.data.frame(Model5_Preds)
+# Model 12 Fit
+Model12_fit = lm(MonthlyIncome ~ TotalWorkingYears*Age + Attrition, data = incomeTrain)
+summary(Model12_fit)
+Model12_Preds = predict(Model12_fit, newdata = incomeTest)
+as.data.frame(Model12_Preds)
 
-MSPE = data.frame(Observed = incomeTest$MonthlyIncome, Predicted = Model5_Preds)
+MSPE = data.frame(Observed = incomeTest$MonthlyIncome, Predicted = Model12_Preds)
 MSPE$Residual = MSPE$Observed - MSPE$Predicted
 MSPE$SquaredResidual = MSPE$Residual^2
 sqrt(mean(MSPE$SquaredResidual))
 
-# Model 6 Fit
-Model5_fit = lm(MonthlyIncome ~ JobLevel + Age*TotalWorkingYears, data = incomeTrain)
-summary(Model5_fit)
-Model5_Preds = predict(Model5_fit, newdata = incomeTest)
-as.data.frame(Model5_Preds)
+# Model 14 Fit
+Model14_fit = lm(MonthlyIncome ~ TotalWorkingYears*Age + 
+                   StockOptionLevel, data = incomeTrain)
+summary(Model14_fit)
+Model14_Preds = predict(Model14_fit, newdata = incomeTest)
+as.data.frame(Model14_Preds)
 
-MSPE = data.frame(Observed = incomeTest$MonthlyIncome, Predicted = Model5_Preds)
+MSPE = data.frame(Observed = incomeTest$MonthlyIncome, Predicted = Model14_Preds)
 MSPE$Residual = MSPE$Observed - MSPE$Predicted
 MSPE$SquaredResidual = MSPE$Residual^2
 sqrt(mean(MSPE$SquaredResidual))
 
+# These RMSEs are below $3,000, but let's see if we can go lower by using Job Level as the explanatory variable.
+
+# Model 19 Fit
+Model19_fit = lm(MonthlyIncome ~ JobLevel + Age*TotalWorkingYears, data = incomeTrain)
+summary(Model19_fit)
+Model19_Preds = predict(Model19_fit, newdata = incomeTest)
+as.data.frame(Model19_Preds)
+
+MSPE = data.frame(Observed = incomeTest$MonthlyIncome, Predicted = Model19_Preds)
+MSPE$Residual = MSPE$Observed - MSPE$Predicted
+MSPE$SquaredResidual = MSPE$Residual^2
+sqrt(mean(MSPE$SquaredResidual))
+
+# Model 20 Fit
+Model20_fit = lm(MonthlyIncome ~ JobLevel + Age + TotalWorkingYears, data = incomeTrain)
+summary(Model20_fit)
+Model20_Preds = predict(Model20_fit, newdata = incomeTest)
+as.data.frame(Model20_Preds)
+
+MSPE = data.frame(Observed = incomeTest$MonthlyIncome, Predicted = Model20_Preds)
+MSPE$Residual = MSPE$Observed - MSPE$Predicted
+MSPE$SquaredResidual = MSPE$Residual^2
+sqrt(mean(MSPE$SquaredResidual))
 ```
+
 We are ready for predictions.
 ```{r}
-predict_attrition <- read.csv('https://github.com/BivinSadler/MSDS_6306_Doing-Data-Science/raw/Master/Unit%2014%20and%2015%20Case%20Study%202/CaseStudy2CompSet%20No%20Attrition.csv', header = TRUE, fill= TRUE)
+predict_attrition <- read.csv('https://github.com/athibeaux/DS6306/raw/main/CaseStudy2_Thibeaux/CaseStudy2CompSet%20No%20Attrition.csv', header = TRUE, fill= TRUE)
+predict_attrition$logIncome <- log(predict_attrition$MonthlyIncome)
 
-#predict_income <- read.csv()
+predict_income <- read.csv('https://github.com/athibeaux/DS6306/raw/main/CaseStudy2_Thibeaux/CaseStudy2CompSet%20No%20Salary.csv', header = TRUE, fill = TRUE)
+
+Model20_fit = lm(MonthlyIncome ~ JobLevel + Age + 
+                   TotalWorkingYears, data = data_balanced_both)
+summary(Model20_fit)
+Model20_Preds = predict(Model20_fit, newdata = predict_income)
+income_predictions <- as.data.frame(Model20_Preds)
+
+predict_income <- add_predictions(predict_income, Model20_fit, var = "pred", type = NULL)
+to_csv_incomepreds <- predict_income %>% select(ID,pred)
+write.csv(to_csv_incomepreds,"C:\\Users\\29685907\\Desktop\\Case2PredictionsThibeauxIncome.csv",row.names=TRUE)
+
+# Model 18.knn, Columns = Age, Job Involvement, Stock Option Level, Total Working Years, Monthly Income
+classifications = knn(dftrain[,c(2,15,29,30,38)],dftest[,c(2,15,29,30,38)],
+                      dftrain$Attrition, prob = TRUE, k = 3)
+table(classifications,dftest$Attrition)
+confusionMatrix(table(classifications,dftest$Attrition))
+
+# Model 18.cv, Internal CV
+classifications = knn.cv(data_balanced_both[,c(2,15,29,30,38)],data_balanced_both$Attrition,prob = TRUE, k = 3)
+confusionMatrix(table(classifications,data_balanced_both$Attrition))
+
+# Model 18.knn, Columns = Age, Job Involvement, Stock Option Level, Total Working Years, Monthly Income
+classifications = knn(data_balanced_both[,c(2,15,29,30,38)],predict_attrition[,c(2,15,29,30,36)], data_balanced_both$Attrition, prob = TRUE, k = 3)
+predict_attrition$preds <- classifications
+
+to_csv_classify <- predict_attrition %>% select(ID,preds)
+write.csv(to_csv_classify,"C:\\Users\\29685907\\Desktop\\Case2PredictionsThibeauxAttrition.csv",row.names=TRUE)
 ```
 Job Trends
 ```{r Examining Job Role Trends}
