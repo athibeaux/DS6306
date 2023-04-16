@@ -27,7 +27,7 @@ library(modelr)
 # Load the Data
 fritos = read.csv('https://github.com/athibeaux/DS6306/raw/main/CaseStudy2_Thibeaux/CaseStudy2-data.csv', header = TRUE, fill = TRUE)
 ```
-
+# Data Cleaning
 ```{r data cleaning}
 sum(is.na(fritos))
 
@@ -44,6 +44,8 @@ fritos$OverTime = as.factor(fritos$OverTime)
 summary(fritos)
 ```
 # Data Balancing
+
+I learned about ROSE package and used it successfully from this helpful website: https://www.analyticsvidhya.com/blog/2016/03/practical-guide-deal-imbalanced-classification-problems/
 ```{r Data Balancing}
 set.seed(9)
 splitPerc = .8
@@ -162,7 +164,7 @@ After running 24 T-Tests, we will eliminate the variables with pvalues over 0.05
 
 Here is a further summary of the significant T-Tests
 Not sufficient Evidence: 
-Relationship Satisfcation: 0.7545
+Relationship Satisfacation: 0.7545
 Performance Rating: 0.748
 Percent Salary Hike: 0.6214
 Daily Rate: 0.3098
@@ -407,7 +409,7 @@ plot(fit)
 
 # Scatterplot, raw data
 data_balanced_both %>% 
-  ggplot(aes(MonthlyIncome, TotalWorkingYears, color = Attrition)) + 
+  ggplot(aes(TotalWorkingYears, MonthlyIncome, color = Attrition)) + 
   geom_jitter() +
   ylab("Monthly Income") + xlab("Total Working Years") +
   ggtitle("Monthly Income vs. Total Working Years")
@@ -423,7 +425,7 @@ plot(fit)
 
 # Scatterplot, log-linear model
 data_balanced_both %>% 
-  ggplot(aes(log_Income, TotalWorkingYears, color = Attrition)) + 
+  ggplot(aes(TotalWorkingYears, log_Income, color = Attrition)) + 
   geom_jitter() +
   ylab("Monthly Income, log transformed") + xlab("Total Working Years") +
   ggtitle("Monthly Income vs. Total Working Years")
@@ -612,17 +614,71 @@ Job Trends
 ```{r Examining Job Role Trends}
 # Income Trends
 fritos %>% ggplot(aes(x = JobRole, y = MonthlyIncome, color = JobRole)) + 
-  geom_boxplot() + xlab("Job Role") + ylab("Monthly Income")
+  geom_boxplot() + xlab("Job Role") + ylab("Monthly Income") +
+  ggtitle("Monthly Income by Job Role")
+
+# Linearity of Years at Company and Monthly Income, Legend Attrition
+fritos %>% ggplot(aes(x = YearsAtCompany, y = MonthlyIncome, color = Attrition)) + 
+  geom_jitter() + xlab("Years at Company") + ylab("Monthly Income") +
+  ggtitle("Monthly Income vs Years at Company")
+
+# Linearity of Years at Company and Monthly Income, Legend Job Level
+fritos %>% ggplot(aes(x = YearsAtCompany, y = MonthlyIncome, color = JobLevel)) + 
+  geom_jitter() + xlab("Years at Company") + ylab("Monthly Income") +
+  ggtitle("Monthly Income vs Years at Company")
+
+# Test Fit for Years At Company and Monthly Income, Controlling for Job Level
+fit = lm(MonthlyIncome ~ YearsAtCompany + JobLevel, data = fritos)
+summary(fit)
+confint(fit)
+
+# Linearity of Performance Rating and Monthly Income, Legend Attrition
+fritos %>% ggplot(aes(x = PerformanceRating, y = MonthlyIncome, color = Attrition)) + 
+  geom_jitter() + xlab("Performance Rating") + ylab("Monthly Income") +
+  ggtitle("Monthly Income vs Performance Rating")
+
+# Test Fit for Performance Rating and Monthly Income, Controlling for Job Level
+fit = lm(MonthlyIncome ~ PerformanceRating + JobLevel, data = fritos)
+summary(fit)
+confint(fit)
 
 # Total Working Years
 fritos %>% ggplot(aes(x = JobRole, y = TotalWorkingYears, color = JobRole)) +
-  geom_boxplot() + xlab("Job Role") + ylab("Total Working Years")
+  geom_boxplot() + xlab("Job Role") + ylab("Total Working Years") +
+  ggtitle("Total Working Years by Job Role")
 
 # Years at Company
 fritos %>% ggplot(aes(x = JobRole, y = YearsAtCompany, color = JobRole)) +
-  geom_boxplot() + xlab("Job Role") + ylab("Years At Company")
+  geom_boxplot() + xlab("Job Role") + ylab("Years At Company") + 
+  ggtitle("Years at Company by Job Role")
 
-# Total Working Years
+# Age
 fritos %>% ggplot(aes(x = JobRole, y = Age, color = JobRole)) +
-  geom_boxplot() + xlab("Job Role")
+  geom_boxplot() + xlab("") + ggtitle("Ages by Job Role")
+
+# Work Life Balance, Legend Overtime
+fritos %>% ggplot(aes(x = WorkLifeBalance, y = JobLevel, color = OverTime)) +
+  geom_jitter() + xlab("Work Life Balance") + ylab("Job Level") +
+  ggtitle("Job Level by Work Life Balance")
+
+# Work Life Balance, Legend Attrition
+fritos %>% ggplot(aes(x = WorkLifeBalance, y = JobLevel, color = Attrition)) +
+  geom_jitter() + xlab("Work Life Balance") + ylab("Job Level") +
+  ggtitle("Job Level by Work Life Balance")
+
+
+# Upward Mobility
+fritos %>% ggplot(aes(x = YearsAtCompany, y = JobLevel, color = Gender)) +
+  geom_jitter() + xlab("Years at Company") + ylab("Job Level") +
+  ggtitle("Job Level by Years at Company")
+
+# Linearity of Performance Rating and Job Level, Legend Attrition
+fritos %>% ggplot(aes(x = PerformanceRating, y = JobLevel, color = Attrition)) + 
+  geom_jitter() + xlab("Performance Rating") + ylab("Job Level") +
+  ggtitle("Job Level vs Performance Rating")
+
+# Test Fit for Performance Rating and Job Level, Controlling for Income
+fit = lm(JobLevel ~ PerformanceRating + MonthlyIncome, data = fritos)
+summary(fit)
+confint(fit)
 ```
